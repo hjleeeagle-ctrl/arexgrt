@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>통합 교통 시각표 (공항철도 & 701 GRT 버스)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col items-center p-3 sm:p-6">
+
+    <main class="w-full max-w-2xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 my-auto">
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-cyan-600 to-blue-700 text-white p-6 relative">
+            <div class="flex justify-between items-center mb-3">
+                <span id="app-type-badge" class="bg-white/20 text-xs px-3 py-1 rounded-full font-semibold backdrop-blur-sm">
+                    공항철도 & 버스 통합 안내
+                </span>
+                <span id="current-live-time" class="text-xs font-mono bg-black/20 px-2 py-1 rounded">--:--:--</span>
+            </div>
+
+            <!-- Header Title Dynamic -->
+            <div class="flex items-center gap-3">
+                <h1 id="main-title" class="text-2xl sm:text-3xl font-extrabold tracking-tight">🚆 공항철도 (AREX)</h1>
+            </div>
+            <p id="main-subtitle" class="text-cyan-100 text-sm mt-1">열차 실시간 및 지정시간 출발 정보</p>
+
+            <!-- Mode Switcher Tabs (Train vs Bus) -->
+            <div class="grid grid-cols-2 gap-2 mt-5 bg-black/20 p-1.5 rounded-xl backdrop-blur-sm">
+                <button id="tab-train" onclick="setAppMode('train')" class="py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 bg-white text-blue-700 shadow-md">
+                    <i class="fa-solid fa-train"></i> 공항철도 (AREX)
+                </button>
+                <button id="tab-bus" onclick="setAppMode('bus')" class="py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 text-white/80 hover:text-white hover:bg-white/10">
+                    <i class="fa-solid fa-bus"></i> 701 GRT 버스
+                </button>
+            </div>
+        </header>
+
+        <!-- Common Control Panel -->
+        <section class="p-5 sm:p-6 border-b border-slate-100 bg-slate-50 space-y-4">
+            
+            <!-- 1. TRAIN SPECIFIC SELECTORS -->
+            <div id="train-selectors" class="space-y-4">
+                <!-- Station Selector -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">기준 역 선택</label>
+                    <div class="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-xl">
+                        <button id="btn-station-cheongna" onclick="setTrainStation('cheongna')" class="py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600">
+                            청라국제도시역
+                        </button>
+                        <button id="btn-station-incheon2" onclick="setTrainStation('incheon2')" class="py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900">
+                            인천공항2터미널역
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Direction Selector -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">행선지 선택</label>
+                    <div id="direction-container" class="grid grid-cols-2 gap-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. BUS SPECIFIC SELECTORS -->
+            <div id="bus-selectors" class="space-y-4 hidden">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">출발지 선택</label>
+                    <div class="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-xl">
+                        <button id="btn-bus-701" onclick="setBusRoute('701')" class="py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600">
+                            가정역 출발 (701)
+                        </button>
+                        <button id="btn-bus-cheongna" onclick="setBusRoute('청라역')" class="py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900">
+                            청라역 출발 (701)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- API Realtime Bus Arrival Card -->
+                <div class="bg-gradient-to-br from-emerald-900 to-teal-900 text-white p-4 rounded-xl shadow-inner border border-emerald-700/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold bg-emerald-500/30 text-emerald-200 px-2.5 py-0.5 rounded-full border border-emerald-400/30 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            API 실시간 위치 연동
+                        </span>
+                        <button onclick="fetchApiBusArrival()" class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-2 py-1 rounded transition-colors flex items-center gap-1">
+                            <i class="fa-solid fa-rotate-right"></i> 새로고침
+                        </button>
+                    </div>
+
+                    <div id="api-arrival-content" class="text-xs space-y-1.5 pt-1">
+                        <div class="flex justify-between items-center text-slate-300">
+                            <span>도착 예정 시간:</span>
+                            <span id="api-time" class="font-bold text-base text-yellow-300 font-mono">조회 중...</span>
+                        </div>
+                        <div class="flex justify-between items-center text-slate-300">
+                            <span>남은 정류장:</span>
+                            <span id="api-rest-count" class="font-bold text-emerald-200">--</span>
+                        </div>
+                        <div class="flex justify-between items-center text-slate-300">
+                            <span>최근 정류소:</span>
+                            <span id="api-latest-stop" class="font-medium text-slate-200 truncate max-w-[180px]">--</span>
+                        </div>
+                        <div class="flex justify-between items-center text-slate-300">
+                            <span>차량 번호판:</span>
+                            <span id="api-num-plate" class="font-mono text-slate-200">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. SHARED DAY TYPE SELECTOR -->
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">운행 요일 구분</label>
+                <div class="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-xl">
+                    <button id="btn-weekday" onclick="setDayType('weekday')" class="py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600">
+                        평일 시간표
+                    </button>
+                    <button id="btn-weekend" onclick="setDayType('weekend')" class="py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900">
+                        주말 / 공휴일 시간표
+                    </button>
+                </div>
+            </div>
+
+            <!-- 4. SHARED TIME CONTROLS -->
+            <div>
+                <div class="flex justify-between items-center mb-1.5">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">기준 시각 설정</label>
+                    <label class="flex items-center gap-2 text-xs text-slate-600 font-semibold cursor-pointer">
+                        <input type="checkbox" id="chk-realtime" checked onchange="toggleRealtimeMode(this.checked)" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-slate-300">
+                        현재 시간 실시간 연동
+                    </label>
+                </div>
+                <div class="flex gap-2">
+                    <input type="time" id="time-picker" disabled onchange="onCustomTimeChange(this.value)" class="w-full px-4 py-2 rounded-xl border border-slate-300 font-mono text-base font-bold bg-slate-100 text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                    <button id="btn-now" onclick="resetToNow()" class="px-4 py-2 bg-slate-800 text-white font-bold rounded-xl text-xs hover:bg-slate-700 transition-colors whitespace-nowrap">
+                        지금 시각
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dynamic Results Section -->
+        <section class="p-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 id="result-section-title" class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-regular fa-clock text-blue-600"></i> 열차 운행 정보
+                </h2>
+                <div class="flex items-center gap-2">
+                    <button id="btn-copy-bus" onclick="copyBusResults()" class="hidden px-2.5 py-1 text-xs font-bold bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-slate-700 transition-all">
+                        <i class="fa-regular fa-copy"></i> 결과 복사
+                    </button>
+                    <span id="reference-time-display" class="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                        기준 시각: --:--
+                    </span>
+                </div>
+            </div>
+
+            <!-- Output Container -->
+            <div id="results-list" class="space-y-3">
+                <!-- Content generated via JavaScript -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Application Script -->
+    <script>
+        // 1. AREX TRAIN TIMETABLE DATA
+        const trainTimetable = {
+            cheongna: {
+                weekday: {
+                    seoul: [
+                        "05:36", "05:47", "05:54",
+                        "06:05", "06:09", "06:20", "06:26", "06:32", "06:38", "06:44", "06:50", "06:56",
+                        "07:01", "07:05", "07:09", "07:14", "07:18", "07:25", "07:30", "07:36", "07:43", "07:50", "07:54",
+                        "08:02", "08:07", "08:15", "08:24", "08:36", "08:45", "08:57",
+                        "09:07", "09:18", "09:29", "09:40", "09:50", "09:58",
+                        "10:05", "10:14", "10:20", "10:32", "10:40", "10:50",
+                        "11:00", "11:09", "11:19", "11:25", "11:35", "11:43", "11:50",
+                        "12:00", "12:10", "12:20", "12:29", "12:40", "12:50", "12:59",
+                        "13:10", "13:20", "13:27", "13:33", "13:39", "13:50", "13:58",
+                        "14:06", "14:14", "14:25", "14:35", "14:44", "14:54",
+                        "15:05", "15:12", "15:20", "15:29", "15:35", "15:45", "15:51", "15:59",
+                        "16:05", "16:15", "16:21", "16:27", "16:34", "16:40", "16:46", "16:51", "16:59",
+                        "17:06", "17:14", "17:20", "17:30", "17:36", "17:41", "17:50",
+                        "18:01", "18:07", "18:16", "18:24", "18:30", "18:40", "18:45", "18:49", "18:56",
+                        "19:03", "19:09", "19:19", "19:29", "19:39", "19:45", "19:56",
+                        "20:04", "20:11", "20:19", "20:25", "20:36", "20:44", "20:52",
+                        "21:00", "21:09", "21:15", "21:25", "21:34", "21:42", "21:51",
+                        "22:00", "22:10", "22:20", "22:29", "22:38", "22:48",
+                        "23:00", "23:12", "23:24", "23:40", "23:59"
+                    ],
+                    incheon: [
+                        "05:13", "05:31", "05:45",
+                        "06:01", "06:14", "06:20", "06:31", "06:42", "06:53",
+                        "07:05", "07:15", "07:22", "07:34", "07:45", "07:57",
+                        "08:07", "08:17", "08:27", "08:37", "08:48", "08:53",
+                        "09:00", "09:06", "09:11", "09:17", "09:22", "09:32", "09:39", "09:44", "09:50", "09:56",
+                        "10:02", "10:07", "10:14", "10:21", "10:30", "10:38", "10:47", "10:55",
+                        "11:06", "11:16", "11:25", "11:36", "11:46", "11:56",
+                        "12:04", "12:15", "12:23", "12:31", "12:38", "12:46", "12:57",
+                        "13:04", "13:12", "13:20", "13:26", "13:33", "13:39", "13:48", "13:55",
+                        "14:01", "14:12", "14:22", "14:31", "14:42", "14:50",
+                        "15:00", "15:10", "15:18", "15:26", "15:35", "15:45", "15:51",
+                        "16:00", "16:07", "16:15", "16:24", "16:31", "16:37", "16:44", "16:50", "16:56",
+                        "17:07", "17:16", "17:21", "17:30", "17:38", "17:48", "17:57",
+                        "18:09", "18:19", "18:29", "18:35", "18:46", "18:57",
+                        "19:08", "19:13", "19:23", "19:35", "19:44", "19:50", "19:57",
+                        "20:03", "20:09", "20:14", "20:17", "20:20", "20:27", "20:31", "20:36", "20:41", "20:47", "20:53",
+                        "21:00", "21:05", "21:11", "21:17", "21:23", "21:30", "21:36", "21:42", "21:49", "21:55",
+                        "22:01", "22:07", "22:14", "22:21", "22:30", "22:39", "22:51",
+                        "23:02", "23:11", "23:20", "23:31", "23:41", "23:50",
+                        "00:06", "00:20"
+                    ]
+                },
+                weekend: {
+                    seoul: [
+                        "05:36", "05:47", "05:54",
+                        "06:01", "06:08", "06:14", "06:20", "06:26", "06:32", "06:38", "06:44", "06:50", "06:56",
+                        "07:01", "07:07", "07:13", "07:19", "07:25", "07:35", "07:42", "07:48", "07:54",
+                        "08:01", "08:09", "08:16", "08:24", "08:30", "08:40", "08:47", "08:54",
+                        "09:01", "09:07", "09:17", "09:26", "09:34", "09:40", "09:46", "09:53",
+                        "10:00", "10:08", "10:14", "10:20", "10:31", "10:40", "10:50",
+                        "11:00", "11:07", "11:13", "11:19", "11:30", "11:35", "11:43", "11:50",
+                        "12:00", "12:10", "12:18", "12:26", "12:34", "12:40", "12:51", "12:58",
+                        "13:04", "13:10", "13:20", "13:27", "13:33", "13:39", "13:50", "13:57",
+                        "14:04", "14:10", "14:20", "14:30", "14:37", "14:45", "14:54",
+                        "15:00", "15:10", "15:17", "15:23", "15:29", "15:35", "15:45", "15:52", "15:59",
+                        "16:10", "16:18", "16:26", "16:34", "16:40", "16:46", "16:53",
+                        "17:01", "17:10", "17:20", "17:26", "17:34", "17:42", "17:50", "17:56",
+                        "18:07", "18:15", "18:24", "18:30", "18:40", "18:48", "18:56",
+                        "19:03", "19:09", "19:19", "19:26", "19:33", "19:39", "19:50", "19:56",
+                        "20:02", "20:08", "20:14", "20:20", "20:25", "20:36", "20:44", "20:52",
+                        "21:00", "21:09", "21:15", "21:25", "21:34", "21:43", "21:51",
+                        "22:00", "22:10", "22:22", "22:33", "22:40", "22:50",
+                        "23:00", "23:12", "23:24", "23:40", "23:59"
+                    ],
+                    incheon: [
+                        "05:13", "05:31", "05:45",
+                        "06:01", "06:20", "06:31", "06:42", "06:53",
+                        "07:05", "07:15", "07:22", "07:29", "07:35", "07:41", "07:50", "07:57",
+                        "08:02", "08:08", "08:14", "08:21", "08:27", "08:36", "08:43", "08:50", "08:59",
+                        "09:07", "09:16", "09:22", "09:29", "09:37", "09:46", "09:56",
+                        "10:02", "10:08", "10:15", "10:21", "10:30", "10:37", "10:46", "10:55",
+                        "11:05", "11:13", "11:21", "11:28", "11:36", "11:45", "11:52",
+                        "12:00", "12:06", "12:15", "12:22", "12:30", "12:37", "12:46", "12:57",
+                        "13:03", "13:09", "13:15", "13:26", "13:32", "13:40", "13:47", "13:56",
+                        "14:06", "14:16", "14:21", "14:26", "14:35", "14:42", "14:51", "14:58",
+                        "15:05", "15:11", "15:18", "15:25", "15:33", "15:40", "15:51", "15:59",
+                        "16:06", "16:15", "16:24", "16:31", "16:38", "16:45", "16:51",
+                        "17:00", "17:07", "17:15", "17:21", "17:30", "17:37", "17:44", "17:50", "17:57",
+                        "18:04", "18:15", "18:22", "18:29", "18:36", "18:45", "18:52", "18:59",
+                        "19:06", "19:13", "19:19", "19:28", "19:35", "19:44", "19:51", "19:58",
+                        "20:09", "20:15", "20:23", "20:31", "20:40", "20:47", "20:54",
+                        "21:01", "21:10", "21:17", "21:22", "21:27", "21:33", "21:39", "21:45", "21:51",
+                        "22:00", "22:07", "22:15", "22:22", "22:30", "22:38", "22:46", "22:57",
+                        "23:08", "23:20", "23:31", "23:41", "23:50",
+                        "00:06", "00:20"
+                    ]
+                }
+            },
+            incheon2: {
+                weekday: {
+                    seoul: [
+                        "05:08", "05:16", "05:20", "05:27", "05:33", "05:38", "05:42", "05:47", "05:53", "05:57",
+                        "06:00", "06:05", "06:11", "06:17", "06:23", "06:27", "06:30", "06:34", "06:38", "06:42", "06:47", "06:51", "06:58",
+                        "07:01", "07:05", "07:09", "07:16", "07:23", "07:27", "07:35", "07:40", "07:48", "07:57",
+                        "08:07", "08:10", "08:18", "08:30", "08:40", "08:47", "08:51",
+                        "09:02", "09:13", "09:20", "09:23", "09:31", "09:38", "09:47", "09:53",
+                        "10:00", "10:05", "10:13", "10:23", "10:30", "10:33", "10:42", "10:52", "10:58",
+                        "11:05", "11:08", "11:16", "11:23", "11:33", "11:40", "11:43", "11:53",
+                        "12:02", "12:13", "12:20", "12:23", "12:32", "12:43", "12:50", "12:53",
+                        "13:00", "13:06", "13:12", "13:22", "13:25", "13:31", "13:39", "13:47", "13:57",
+                        "14:00", "14:08", "14:17", "14:27", "14:37", "14:40", "14:45", "14:53",
+                        "15:02", "15:08", "15:15", "15:18", "15:24", "15:32", "15:38", "15:45", "15:48", "15:54",
+                        "16:00", "16:07", "16:13", "16:17", "16:20", "16:24", "16:32", "16:39", "16:47", "16:53",
+                        "17:00", "17:03", "17:09", "17:14", "17:23", "17:33", "17:36", "17:40", "17:49", "17:57",
+                        "18:03", "18:10", "18:13", "18:18", "18:22", "18:29", "18:36", "18:42", "18:49", "18:52",
+                        "19:02", "19:12", "19:18", "19:25", "19:29", "19:37", "19:44", "19:52", "19:58",
+                        "20:08", "20:11", "20:17", "20:25", "20:33", "20:42", "20:48", "20:55", "20:58",
+                        "21:07", "21:15", "21:24", "21:33", "21:43", "21:50", "21:53",
+                        "22:02", "22:11", "22:21", "22:33", "22:40", "22:45", "22:57",
+                        "23:13", "23:32", "23:50"
+                    ]
+                },
+                weekend: {
+                    seoul: [
+                        "05:08", "05:16", "05:20", "05:27", "05:34", "05:41", "05:47", "05:53", "05:57",
+                        "06:00", "06:05", "06:11", "06:17", "06:23", "06:27", "06:30", "06:34", "06:40", "06:46", "06:52", "06:58",
+                        "07:05", "07:08", "07:15", "07:21", "07:27", "07:34", "07:42", "07:49", "07:57",
+                        "08:03", "08:10", "08:13", "08:20", "08:27", "08:34", "08:40", "08:47", "08:50", "08:59",
+                        "09:07", "09:13", "09:17", "09:20", "09:26", "09:33", "09:41", "09:47", "09:53",
+                        "10:00", "10:04", "10:13", "10:23", "10:30", "10:33", "10:40", "10:46", "10:52",
+                        "11:01", "11:05", "11:08", "11:16", "11:23", "11:33", "11:40", "11:43", "11:51", "11:59",
+                        "12:07", "12:13", "12:20", "12:24", "12:31", "12:37", "12:43", "12:50", "12:53",
+                        "13:00", "13:06", "13:12", "13:21", "13:25", "13:30", "13:37", "13:43", "13:53",
+                        "14:00", "14:03", "14:10", "14:18", "14:27", "14:33", "14:40", "14:43", "14:50", "14:56",
+                        "15:02", "15:08", "15:15", "15:18", "15:25", "15:32", "15:42", "15:45", "15:51", "15:59",
+                        "16:07", "16:13", "16:17", "16:20", "16:26", "16:34", "16:43", "16:53", "16:57",
+                        "17:00", "17:07", "17:15", "17:23", "17:29", "17:36", "17:40", "17:48", "17:57",
+                        "18:03", "18:10", "18:13", "18:21", "18:29", "18:36", "18:42", "18:49", "18:52", "18:59",
+                        "19:06", "19:12", "19:21", "19:25", "19:29", "19:35", "19:41", "19:47", "19:53", "19:58",
+                        "20:07", "20:11", "20:17", "20:25", "20:33", "20:42", "20:48", "20:55", "20:58",
+                        "21:07", "21:16", "21:24", "21:33", "21:43", "21:50", "21:55",
+                        "22:06", "22:13", "22:23", "22:33", "22:40", "22:45", "22:57",
+                        "23:13", "23:32", "23:50"
+                    ]
+                }
+            }
+        };
+
+        // 2. BUS TIMETABLE DATA (701 GRT)
+        const busTimetable = {
+            '701': {
+                label: '가정역 출발 (701)',
+                weekday: {
+                    4: [55], 5: [8, 28, 51], 6: [8, 24, 39, 48, 59], 7: [10, 20, 28, 36, 46, 54],
+                    8: [2, 10, 21, 31, 40, 51], 9: [4, 18, 28, 41, 54], 10: [12, 27, 37, 47],
+                    11: [3, 19, 33, 47], 12: [1, 19, 33, 48], 13: [1, 18, 37, 50], 14: [3, 18, 33, 51],
+                    15: [7, 27, 46], 16: [1, 18, 37, 50], 17: [1, 19, 33, 44, 58], 18: [7, 18, 31, 43, 52],
+                    19: [1, 12, 20, 30, 38, 46, 58], 20: [11, 23, 33, 41, 51], 21: [6, 17, 31, 44, 59],
+                    22: [13, 29, 46], 23: [3, 15, 32, 45], 0: [3, 23, 41, 51], 1: [5]
+                },
+                weekend: {
+                    4: [55], 5: [8, 28, 53], 6: [11, 28, 43], 7: [1, 20, 39, 59], 8: [19, 36, 53],
+                    9: [6, 25, 41], 10: [1, 20, 36, 56], 11: [13, 31, 47], 12: [3, 21, 36, 52],
+                    13: [8, 21, 38, 53], 14: [10, 30, 44, 56], 15: [16, 36, 53], 16: [9, 27, 43, 59],
+                    17: [19, 36, 55], 18: [14, 29, 43], 19: [0, 19, 31, 45, 58], 20: [11, 24, 37, 51],
+                    21: [7, 19, 31, 45], 22: [3, 18, 30, 47], 23: [5, 24, 43], 0: [3, 23, 48], 1: [3]
+                }
+            },
+            '청라역': {
+                label: '청라역 출발 (701)',
+                weekday: {
+                    4: [35, 55], 5: [18, 35, 51], 6: [6, 15, 26, 37, 47, 55], 7: [3, 13, 21, 29, 37, 48, 58],
+                    8: [7, 18, 31, 45, 55], 9: [8, 21, 39, 54], 10: [4, 14, 30, 46], 11: [0, 14, 28, 46],
+                    12: [0, 15, 28, 45], 13: [4, 17, 30, 45], 14: [0, 18, 34, 54], 15: [13, 28, 45],
+                    16: [4, 17, 28, 46], 17: [0, 11, 25, 34, 45, 58], 18: [10, 19, 28, 39, 47, 57],
+                    19: [5, 13, 25, 38, 50], 20: [0, 8, 18, 33, 44, 58], 21: [11, 26, 40, 56],
+                    22: [13, 30, 42, 59], 23: [12, 30, 50], 0: [8, 18, 32]
+                },
+                weekend: {
+                    4: [35, 55], 5: [20, 38, 55], 6: [10, 28, 47], 7: [6, 26, 46], 8: [3, 20, 33, 52],
+                    9: [8, 28, 47], 10: [3, 23, 40, 58], 11: [14, 30, 48], 12: [3, 19, 35, 48],
+                    13: [5, 20, 37, 57], 14: [11, 23, 43], 15: [3, 20, 36, 54], 16: [10, 26, 46],
+                    17: [3, 22, 41, 56], 18: [10, 27, 46, 58], 19: [12, 25, 38, 51],
+                    20: [4, 18, 34, 46, 58], 21: [12, 30, 45, 57], 22: [14, 32, 51], 23: [10, 30, 50], 0: [15, 30]
+                }
+            }
+        };
+
+        // Application Global State
+        let state = {
+            mode: 'train', // 'train' or 'bus'
+            trainStation: 'cheongna', // 'cheongna' or 'incheon2'
+            busRoute: '701', // '701' or '청라역'
+            dayType: 'weekday', // 'weekday' or 'weekend'
+            direction: 'seoul', // 'seoul' or 'incheon'
+            isRealtime: true,
+            selectedTime: '00:00'
+        };
+
+        // Incheon bus-arrival API configuration.
+        // The service key must be an active key approved for this API in data.go.kr.
+        // IDs are API-specific long IDs, not the stop's public/ARS number.
+        const incheonBusApi = {
+            serviceKey: 'dfbf449025a7def45cfb39fa34c5687af4579e2d2022c107f6ba29881cdfbc95',
+            endpoint: 'https://apis.data.go.kr/6280000/busArrivalService/getBusArrivalList',
+            routes: {
+                // Verified response: 가정(루원시티)역 / ROUTEID 165000498.
+                '701': { routeId: '165000498', bstopId: '168001024' },
+                // Verify this long stop ID with busStationService before enabling this card.
+                // Leaving it unset is safer than showing arrival information for the wrong stop.
+                '청라역': { routeId: '165000498', bstopId: '' }
+            }
+        };
+
+        function setArrivalStatus(title, detail) {
+            document.getElementById('api-time').innerText = title;
+            document.getElementById('api-rest-count').innerText = detail || '-';
+            document.getElementById('api-latest-stop').innerText = '-';
+            document.getElementById('api-num-plate').innerText = '-';
+        }
+
+        function normalizeServiceKey(key) {
+            try { return decodeURIComponent(key); } catch (_) { return key; }
+        }
+
+        function firstValue(object, names) {
+            if (!object || typeof object !== 'object') return undefined;
+            const normalized = Object.fromEntries(Object.entries(object).map(([key, value]) => [key.toUpperCase(), value]));
+            for (const name of names) {
+                const value = normalized[name.toUpperCase()];
+                if (value !== undefined && value !== null && value !== '') return value;
+            }
+            return undefined;
+        }
+
+        function getApiError(data) {
+            const errorHeader = data?.OpenAPI_ServiceResponse?.cmmMsgHeader;
+            const header = data?.ServiceResult?.msgHeader || data?.response?.header || data?.header;
+            const code = firstValue(errorHeader || header, ['returnReasonCode', 'resultCode', 'resultCode']);
+            const message = firstValue(errorHeader || header, ['returnAuthMsg', 'errMsg', 'resultMessage', 'resultMsg']);
+            return code && String(code) !== '0' ? (message || `API 오류 코드 ${code}`) : null;
+        }
+
+        function findArrivalItems(data) {
+            const root = data?.ServiceResult || data?.response || data;
+            const body = root?.msgBody || root?.body || root?.response?.body;
+            const items = body?.itemList || body?.items?.item || body?.items || root?.itemList;
+            if (!items) return [];
+            return Array.isArray(items) ? items : [items];
+        }
+
+        function parseArrivalResponse(rawText) {
+            const text = rawText.trim();
+            if (!text) throw new Error('빈 응답');
+
+            if (text.startsWith('{') || text.startsWith('[')) {
+                const data = JSON.parse(text);
+                const apiError = getApiError(data);
+                if (apiError) return { error: apiError };
+                return { items: findArrivalItems(data) };
+            }
+
+            const xml = new DOMParser().parseFromString(text, 'application/xml');
+            if (xml.querySelector('parsererror')) throw new Error('XML 형식 오류');
+            const error = xml.querySelector('cmmMsgHeader > errMsg, cmmMsgHeader > returnAuthMsg, msgHeader > resultMessage, msgHeader > resultMsg')?.textContent?.trim();
+            const code = xml.querySelector('cmmMsgHeader > returnReasonCode, msgHeader > resultCode')?.textContent?.trim();
+            if (code && code !== '0') return { error: error || `API 오류 코드 ${code}` };
+
+            // Incheon API uses itemList (not item) in its XML response.
+            const items = [...xml.querySelectorAll('msgBody > itemList, itemList, item')].map((item) =>
+                Object.fromEntries([...item.children].map((child) => [child.tagName, child.textContent.trim()]))
+            );
+            return { items };
+        }
+
+        // Direct HTTPS calls are used: the API's CORS preflight permits GET.
+        // Do not send the key through an unrelated public CORS proxy.
+        async function fetchApiBusArrival() {
+            const route = incheonBusApi.routes[state.busRoute];
+            if (!route?.routeId || !route?.bstopId) {
+                setArrivalStatus('설정 필요', '선택한 출발지의 API 정류소 ID를 확인해 주세요');
+                return;
+            }
+
+            setArrivalStatus('실시간 조회 중...', '');
+            const params = new URLSearchParams({
+                serviceKey: normalizeServiceKey(incheonBusApi.serviceKey),
+                pageNo: '1',
+                numOfRows: '10',
+                routeId: route.routeId,
+                bstopId: route.bstopId
+            });
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 12000);
+
+            try {
+                const response = await fetch(`${incheonBusApi.endpoint}?${params}`, {
+                    signal: controller.signal,
+                    // This endpoint returns XML. Adding `_type=json` produces an API HTTP_ERROR.
+                    headers: { Accept: 'application/xml, text/xml;q=0.9' }
+                });
+                const rawText = await response.text();
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const result = parseArrivalResponse(rawText);
+                if (result.error) {
+                    setArrivalStatus('API 인증/요청 오류', result.error);
+                    return;
+                }
+                if (!result.items?.length) {
+                    setArrivalStatus('운행 정보 없음', '현재 접근 중인 차량이 없거나 도착 정보가 없습니다');
+                    return;
+                }
+
+                const item = result.items[0];
+                updateArrivalUI(
+                    firstValue(item, ['ARRIVALESTIMATETIME', 'arrivalEstimateTime']),
+                    firstValue(item, ['REST_STOP_COUNT', 'restStopCount']),
+                    firstValue(item, ['LATEST_STOP_NAME', 'latestStopName']),
+                    firstValue(item, ['BUS_NUM_PLATE', 'busNumPlate'])
+                );
+            } catch (error) {
+                console.error('Bus arrival API request failed:', error);
+                const message = error.name === 'AbortError' ? '요청 시간이 초과되었습니다' : '네트워크 또는 API 응답을 확인해 주세요';
+                setArrivalStatus('조회 실패', message);
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        function updateArrivalUI(arrivalSec, restCount, latestStop, numPlate) {
+            const timeEl = document.getElementById('api-time');
+            const restCountEl = document.getElementById('api-rest-count');
+            const latestStopEl = document.getElementById('api-latest-stop');
+            const numPlateEl = document.getElementById('api-num-plate');
+
+            const secNum = Number.parseInt(arrivalSec, 10);
+            if (Number.isFinite(secNum) && secNum > 0) {
+                const minutes = Math.floor(secNum / 60);
+                const seconds = secNum % 60;
+                timeEl.innerText = `${minutes}분 ${seconds}초 후`;
+            } else {
+                timeEl.innerText = '곧 도착 또는 운행 중';
+            }
+
+            restCountEl.innerText = restCount === undefined ? '-' : `${restCount}개 정류장 전`;
+            latestStopEl.innerText = latestStop || '-';
+            numPlateEl.innerText = numPlate || '-';
+        }
+
+        function init() {
+            const now = new Date();
+            const dayOfWeek = now.getDay();
+            state.dayType = (dayOfWeek === 0 || dayOfWeek === 6) ? 'weekend' : 'weekday';
+
+            updateDayTypeUI();
+            updateLiveClock();
+
+            setInterval(updateLiveClock, 1000);
+            renderDirectionButtons();
+            setAppMode('train');
+        }
+
+        function setAppMode(mode) {
+            state.mode = mode;
+
+            const tabTrain = document.getElementById('tab-train');
+            const tabBus = document.getElementById('tab-bus');
+            const mainTitle = document.getElementById('main-title');
+            const mainSubtitle = document.getElementById('main-subtitle');
+            const trainSelectors = document.getElementById('train-selectors');
+            const busSelectors = document.getElementById('bus-selectors');
+            const resultTitle = document.getElementById('result-section-title');
+            const btnCopyBus = document.getElementById('btn-copy-bus');
+
+            if (mode === 'train') {
+                tabTrain.className = "py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 bg-white text-blue-700 shadow-md";
+                tabBus.className = "py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 text-white/80 hover:text-white hover:bg-white/10";
+                
+                mainTitle.innerHTML = "🚆 공항철도 (AREX)";
+                mainSubtitle.textContent = "열차 실시간 및 지정시간 출발 정보";
+                trainSelectors.classList.remove('hidden');
+                busSelectors.classList.add('hidden');
+                resultTitle.innerHTML = `<i class="fa-regular fa-clock text-blue-600"></i> 열차 운행 정보`;
+                btnCopyBus.classList.add('hidden');
+            } else {
+                tabBus.className = "py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 bg-white text-blue-700 shadow-md";
+                tabTrain.className = "py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 text-white/80 hover:text-white hover:bg-white/10";
+                
+                mainTitle.innerHTML = "🚌 701 GRT 버스";
+                mainSubtitle.textContent = "청라 GRT 실시간 및 시각표 정보";
+                trainSelectors.classList.add('hidden');
+                busSelectors.classList.remove('hidden');
+                resultTitle.innerHTML = `<i class="fa-solid fa-bus text-blue-600"></i> 다가오는 버스`;
+                btnCopyBus.classList.remove('hidden');
+                fetchApiBusArrival();
+            }
+
+            render();
+        }
+
+        function setTrainStation(station) {
+            state.trainStation = station;
+            
+            const btnCheongna = document.getElementById('btn-station-cheongna');
+            const btnIncheon2 = document.getElementById('btn-station-incheon2');
+
+            if (station === 'cheongna') {
+                btnCheongna.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600";
+                btnIncheon2.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+            } else {
+                btnIncheon2.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600";
+                btnCheongna.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+                state.direction = 'seoul';
+            }
+
+            renderDirectionButtons();
+            render();
+        }
+
+        function setBusRoute(route) {
+            state.busRoute = route;
+            const btnBus701 = document.getElementById('btn-bus-701');
+            const btnBusCheongna = document.getElementById('btn-bus-cheongna');
+
+            if (route === '701') {
+                btnBus701.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600";
+                btnBusCheongna.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+            } else {
+                btnBusCheongna.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600";
+                btnBus701.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+            }
+
+            fetchApiBusArrival();
+            render();
+        }
+
+        function renderDirectionButtons() {
+            const container = document.getElementById('direction-container');
+            if (state.trainStation === 'cheongna') {
+                container.innerHTML = `
+                    <button id="btn-dir-seoul" onclick="setDirection('seoul')" class="py-2 text-xs sm:text-sm font-bold rounded-lg border transition-all ${state.direction === 'seoul' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}">
+                        서울역 방면 (상행)
+                    </button>
+                    <button id="btn-dir-incheon" onclick="setDirection('incheon')" class="py-2 text-xs sm:text-sm font-bold rounded-lg border transition-all ${state.direction === 'incheon' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}">
+                        인천공항2터미널 방면 (하행)
+                    </button>
+                `;
+            } else {
+                container.innerHTML = `
+                    <button id="btn-dir-seoul" onclick="setDirection('seoul')" class="col-span-2 py-2 text-xs sm:text-sm font-bold rounded-lg border border-blue-500 bg-blue-50 text-blue-700">
+                        서울역 방면 (종점 출발)
+                    </button>
+                `;
+            }
+        }
+
+        function setDirection(dir) {
+            state.direction = dir;
+            renderDirectionButtons();
+            render();
+        }
+
+        function setDayType(type) {
+            state.dayType = type;
+            updateDayTypeUI();
+            render();
+        }
+
+        function updateDayTypeUI() {
+            const btnWeekday = document.getElementById('btn-weekday');
+            const btnWeekend = document.getElementById('btn-weekend');
+
+            if (state.dayType === 'weekday') {
+                btnWeekday.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600";
+                btnWeekend.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+            } else {
+                btnWeekend.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all shadow-sm bg-white text-blue-600";
+                btnWeekday.className = "py-2 text-xs sm:text-sm font-bold rounded-lg transition-all text-slate-600 hover:text-slate-900";
+            }
+        }
+
+        function toggleRealtimeMode(isRealtime) {
+            state.isRealtime = isRealtime;
+            const timePicker = document.getElementById('time-picker');
+            
+            if (isRealtime) {
+                timePicker.disabled = true;
+                timePicker.classList.add('bg-slate-100', 'text-slate-400');
+                timePicker.classList.remove('bg-white', 'text-slate-800');
+            } else {
+                timePicker.disabled = false;
+                timePicker.classList.remove('bg-slate-100', 'text-slate-400');
+                timePicker.classList.add('bg-white', 'text-slate-800');
+                if(!timePicker.value) {
+                    const now = new Date();
+                    timePicker.value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                }
+                state.selectedTime = timePicker.value;
+            }
+            render();
+        }
+
+        function resetToNow() {
+            document.getElementById('chk-realtime').checked = true;
+            toggleRealtimeMode(true);
+        }
+
+        function onCustomTimeChange(val) {
+            state.selectedTime = val;
+            render();
+        }
+
+        function updateLiveClock() {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            document.getElementById('current-live-time').textContent = timeStr;
+            
+            if (state.isRealtime) {
+                state.selectedTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                render();
+            }
+        }
+
+        function timeToMinutes(timeStr) {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function render() {
+            document.getElementById('reference-time-display').textContent = `기준 시각: ${state.selectedTime}`;
+
+            if (state.mode === 'train') {
+                renderTrainSchedule();
+            } else {
+                renderBusSchedule();
+            }
+        }
+
+        function renderTrainSchedule() {
+            const listContainer = document.getElementById('results-list');
+            listContainer.innerHTML = '';
+
+            const stationData = trainTimetable[state.trainStation];
+            const scheduleList = stationData[state.dayType][state.direction];
+
+            const currentMins = timeToMinutes(state.selectedTime);
+
+            let pastTrain = null;
+            let upcomingTrains = [];
+
+            for (let i = 0; i < scheduleList.length; i++) {
+                const trainMins = timeToMinutes(scheduleList[i]);
+                if (trainMins < currentMins) {
+                    pastTrain = scheduleList[i];
+                } else {
+                    upcomingTrains.push(scheduleList[i]);
+                    if (upcomingTrains.length === 4) break;
+                }
+            }
+
+            if (pastTrain) {
+                const diff = currentMins - timeToMinutes(pastTrain);
+                listContainer.appendChild(createTrainCardHtml(pastTrain, `전 열차 (${diff}분 전 출발)`, true));
+            }
+
+            if (upcomingTrains.length === 0) {
+                listContainer.innerHTML += `
+                    <div class="text-center py-10 text-slate-400 font-medium">
+                        오늘 운행이 종료되었거나 열차 정보가 없습니다.
+                    </div>
+                `;
+            } else {
+                upcomingTrains.forEach((timeStr, idx) => {
+                    const diff = timeToMinutes(timeStr) - currentMins;
+                    let label = `${idx + 1}번째 열차`;
+                    if (diff === 0) label += " (곧 출발)";
+                    else label += ` (${diff}분 후)`;
+                    listContainer.appendChild(createTrainCardHtml(timeStr, label, false, idx === 0));
+                });
+            }
+        }
+
+        function createTrainCardHtml(timeStr, statusLabel, isPast = false, isNext = false) {
+            const div = document.createElement('div');
+            
+            let cardStyle = "bg-white border-slate-200 text-slate-800";
+            let badgeStyle = "bg-slate-100 text-slate-600";
+            
+            if (isPast) {
+                cardStyle = "bg-slate-50 border-slate-200 opacity-60";
+            } else if (isNext) {
+                cardStyle = "bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-sm ring-1 ring-blue-400/30";
+                badgeStyle = "bg-blue-600 text-white font-bold";
+            }
+
+            const destinationText = (state.direction === 'seoul') ? '서울역 방면' : '인천공항2터미널 방면';
+
+            div.className = `flex items-center justify-between p-4 rounded-xl border ${cardStyle} transition-all`;
+            div.innerHTML = `
+                <div class="flex items-center gap-3 sm:gap-4">
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full ${isNext ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'} flex items-center justify-center font-bold text-lg">
+                        <i class="fa-solid fa-train"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xl sm:text-2xl font-black font-mono tracking-tight">${timeStr}</span>
+                            <span class="text-xs px-2 py-0.5 rounded ${badgeStyle}">${statusLabel}</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-0.5 font-medium">${destinationText}</p>
+                    </div>
+                </div>
+            `;
+            return div;
+        }
+
+        function renderBusSchedule() {
+            const listContainer = document.getElementById('results-list');
+            listContainer.innerHTML = '';
+
+            const busData = busTimetable[state.busRoute];
+            const scheduleObj = busData[state.dayType];
+
+            const [currHour, currMin] = state.selectedTime.split(':').map(Number);
+            const currentMinsTotal = currHour * 60 + currMin;
+
+            const upcoming = [];
+
+            for (let i = 0; i < 48; i++) {
+                const checkHour = (currHour + i) % 24;
+                const mins = scheduleObj[checkHour] || [];
+                const sortedMins = [...mins].sort((a, b) => a - b);
+
+                for (const m of sortedMins) {
+                    const busTimeTotal = ((currHour + i) * 60) + m;
+                    if (busTimeTotal >= currentMinsTotal) {
+                        const formattedTime = `${String(checkHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                        const diffMins = busTimeTotal - currentMinsTotal;
+                        upcoming.push({ time: formattedTime, diff: diffMins });
+                        if (upcoming.length === 4) break;
+                    }
+                }
+                if (upcoming.length === 4) break;
+            }
+
+            if (upcoming.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-10 text-slate-400 font-medium">
+                        운행 종료 또는 버스 시간표 정보가 없습니다.
+                    </div>
+                `;
+                return;
+            }
+
+            upcoming.forEach((item, index) => {
+                const isNext = index === 0;
+                const cardStyle = isNext 
+                    ? "bg-gradient-to-r from-cyan-50 to-blue-50 border-cyan-300 shadow-sm ring-1 ring-cyan-400/30" 
+                    : "bg-white border-slate-200 text-slate-800";
+                
+                const badgeStyle = isNext ? "bg-cyan-600 text-white font-bold" : "bg-slate-100 text-slate-600";
+
+                const div = document.createElement('div');
+                div.className = `bus-item flex items-center justify-between p-4 rounded-xl border ${cardStyle} transition-all`;
+                div.innerHTML = `
+                    <div class="flex items-center gap-3 sm:gap-4">
+                        <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full ${isNext ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-600'} flex items-center justify-center font-bold text-lg">
+                            <i class="fa-solid fa-bus"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="bus-rank text-xs px-2 py-0.5 rounded ${badgeStyle}">${index + 1}번째 버스</span>
+                                <span class="text-xs text-slate-500 font-semibold">${item.diff === 0 ? '곧 출발' : item.diff + '분 후'}</span>
+                            </div>
+                            <span class="bus-time text-xl sm:text-2xl font-black font-mono tracking-tight text-slate-800">${item.time}</span>
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(div);
+            });
+        }
+
+        function copyBusResults() {
+            const items = document.querySelectorAll('.bus-item');
+            if (items.length === 0) {
+                alert('복사할 버스 결과가 없습니다.');
+                return;
+            }
+
+            const routeName = busTimetable[state.busRoute].label;
+            const text = `[${routeName}] \n` + Array.from(items).map(item => {
+                const rank = item.querySelector('.bus-rank').textContent;
+                const time = item.querySelector('.bus-time').textContent;
+                return `${rank}: ${time}`;
+            }).join('\n');
+
+            const copyBtn = document.getElementById('btn-copy-bus');
+            
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                const originalContent = copyBtn.innerHTML;
+                copyBtn.innerHTML = `<i class="fa-solid fa-check text-green-600"></i> 복사 완료!`;
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalContent;
+                }, 2000);
+            } catch (err) {
+                alert('복사에 실패했습니다.');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        // Initialize App on DOM Load
+        window.onload = function() {
+            init();
+        };
+    </script>
+</body>
+</html>
